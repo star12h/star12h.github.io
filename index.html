@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>陈亦舟 — 前端工程师</title>
+<meta name="description" content="陈亦舟，前端工程师。做设计系统、数据可视化与高性能 Web 界面。">
+<meta name="theme-color" content="#faf8f4">
+
+<!--
+  改站点的三个地方：
+  1. 上面 <title> / <meta description> 换成你的名字和一句话介绍
+  2. 正文里所有「陈亦舟」「前端工程师」「上海」等文案，按需替换
+  3. 项目卡片里的链接 href="#" 换成真实地址（GitHub、Behance、线上 Demo）
+  头像用的是姓名首字母，不需要图片；想换照片就在 <div class="monogram"> 里放 <img>
+-->
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23faf8f4'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%231a1714'/%3E%3Ctext x='16' y='21' font-family='Georgia,serif' font-size='13' text-anchor='middle' fill='%231a1714'%3ECY%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<div class="sheet">
+
+  <aside class="rail">
+    <div class="identity">
+      <div class="monogram" aria-hidden="true">CY</div>
+      <h1 class="name">陈亦舟</h1>
+      <p class="role">前端工程师 · 上海</p>
+      <p class="pitch">七年时间在做同一件事：把复杂的业务逻辑，收进让人一眼就懂的界面里。</p>
+    </div>
+
+    <nav class="toc" aria-label="章节导航">
+      <a href="#about"><span>01</span>关于</a>
+      <a href="#experience"><span>02</span>经历</a>
+      <a href="#work"><span>03</span>项目</a>
+      <a href="#skills"><span>04</span>技能</a>
+      <a href="#education"><span>05</span>教育</a>
+    </nav>
+
+    <ul class="contact">
+      <li><span class="label">邮箱</span><a href="mailto:hi@example.com">hi@example.com</a></li>
+      <li><span class="label">GitHub</span><a href="https://github.com/">github.com/yourname</a></li>
+      <li><span class="label">微信</span><span class="value">your_wechat</span></li>
+    </ul>
+  </aside>
+
+  <main id="main">
+
+    <section class="hero">
+      <p class="eyebrow">现开放远程与合作机会</p>
+      <p class="statement">把复杂的想法，<br>做成人愿意用的界面。</p>
+      <p class="lede">
+        我是一名前端工程师，专注设计系统、数据可视化与性能优化。
+        过去七年，我把三个从零开始的产品送到了真实用户手里，
+        也把两个年久失修的代码库收拾到能安心迭代。
+      </p>
+    </section>
+
+    <section id="about" class="section">
+      <h2><span class="idx">01</span>关于</h2>
+      <div class="section-body prose">
+        <p>
+          我的工作习惯偏向「先想清楚再动手」：拿到需求会先画出信息结构，
+          确认哪些是真正的用户动作，再决定技术方案。写代码时偏爱小而清楚
+          的模块，讨厌为了复用而提前抽象。
+        </p>
+        <p>
+          做过 B 端后台、C 端电商和一块实时监控大屏。最有成就感的一次，
+          是把首屏加载从 4.2 秒压到 1.1 秒 —— 没有换框架，只是砍掉了
+          不该在那里的东西。
+        </p>
+      </div>
+    </section>
+
+    <section id="experience" class="section">
+      <h2><span class="idx">02</span>经历</h2>
+      <ol class="timeline section-body">
+        <li>
+          <div class="when">2022 — 现在</div>
+          <div class="what">
+            <h3>高级前端工程师 · 星野科技</h3>
+            <p>负责数据平台前端，从零搭建设计系统，覆盖 6 条产品线共 120+ 页面。推动构建流程从 Webpack 迁到 Vite，本地冷启动从 38 秒降到 2 秒。</p>
+          </div>
+        </li>
+        <li>
+          <div class="when">2019 — 2022</div>
+          <div class="what">
+            <h3>前端工程师 · 拾光网络</h3>
+            <p>独立完成电商中台的商品与订单模块，支撑日均 3 万单。主导性能专项，首屏时间下降 74%，跳出率随之下降 11 个百分点。</p>
+          </div>
+        </li>
+        <li>
+          <div class="when">2017 — 2019</div>
+          <div class="what">
+            <h3>前端开发 · 三木工作室</h3>
+            <p>承接品牌官网与互动营销页面，一年交付 20+ 项目。学会了在没有设计稿的情况下也能把界面做得像样。</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="work" class="section">
+      <h2><span class="idx">03</span>项目</h2>
+      <div class="cards section-body">
+
+        <article class="card">
+          <div class="card-head">
+            <h3>星野设计系统</h3>
+            <span class="year">2023</span>
+          </div>
+          <p>一套面向 B 端产品的组件库：48 个组件、完整的设计令牌、暗色模式与无障碍规范。上线半年后，新页面平均开发时间从 5 天缩短到 1.5 天。</p>
+          <ul class="tags">
+            <li>React</li><li>TypeScript</li><li>Storybook</li>
+          </ul>
+          <a class="link" href="#">查看详情 →</a>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3>实时监控大屏</h3>
+            <span class="year">2022</span>
+          </div>
+          <p>为运维团队做的可视化监控面板，同时渲染 2 万个动态节点仍保持 60fps。核心是把 DOM 换成 Canvas，并自建了一套脏区重绘的调度逻辑。</p>
+          <ul class="tags">
+            <li>Canvas</li><li>WebSocket</li><li>D3</li>
+          </ul>
+          <a class="link" href="#">查看详情 →</a>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3>拾光商城中台</h3>
+            <span class="year">2021</span>
+          </div>
+          <p>商品、库存、订单三块核心业务的前端架构。做了可以配置字段的表单引擎，运营改一次活动页面不用再排开发资源。</p>
+          <ul class="tags">
+            <li>Vue</li><li>Schema Form</li><li>Node BFF</li>
+          </ul>
+          <a class="link" href="#">查看详情 →</a>
+        </article>
+
+        <article class="card card--aside">
+          <div class="card-head">
+            <h3>其他小项目</h3>
+            <span class="year">一直在做</span>
+          </div>
+          <ul class="mini">
+            <li>一个开源的 Markdown 表格对齐工具，3.2k star</li>
+            <li>每周更新的前端通讯，订阅 2000+</li>
+            <li>两个自用的 Figma 插件，用来批量改间距</li>
+          </ul>
+          <a class="link" href="https://github.com/">在 GitHub 上看 →</a>
+        </article>
+
+      </div>
+    </section>
+
+    <section id="skills" class="section">
+      <h2><span class="idx">04</span>技能</h2>
+      <dl class="skills section-body">
+        <div>
+          <dt>日常主力</dt>
+          <dd>TypeScript、React、Vite、CSS 架构、Web 性能优化</dd>
+        </div>
+        <div>
+          <dt>也能上手</dt>
+          <dd>Vue、Node.js、Playwright、Figma、基础的数据可视化</dd>
+        </div>
+        <div>
+          <dt>正在补</dt>
+          <dd>Rust 与 WASM，想把几个计算密集的模块搬到浏览器里跑</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section id="education" class="section">
+      <h2><span class="idx">05</span>教育</h2>
+      <div class="section-body prose">
+        <p><strong>同济大学</strong> · 软件工程 学士，2013 — 2017。</p>
+        <p>课外做过两年开源文档翻译，也是那时候开始习惯把技术写清楚。</p>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p class="eyebrow">想聊聊？</p>
+      <a class="mail" href="mailto:hi@example.com">hi@example.com</a>
+      <p class="colophon">
+        这个页面是手写的 HTML 与 CSS，没有框架，也没有追踪脚本。<br>
+        © <span id="year">2026</span> 陈亦舟
+      </p>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
