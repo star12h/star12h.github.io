@@ -16,7 +16,8 @@ if (!password || password.trim().length < 6) {
 const normalize = (value) => value.trim().toLowerCase();
 
 const ITERATIONS = 250000;
-const SOURCE = join(here, 'src', 'index.html');
+const SRC_DIR = join(here, 'src');
+const SOURCE = join(SRC_DIR, 'index.html');
 const SHELL = join(here, 'index.html');
 const PAYLOAD_FILE = join(here, 'site.enc');
 
@@ -37,7 +38,7 @@ async function inlineLocalStyles(html) {
     const file = href.split('?')[0].split('#')[0];
     let css;
     try {
-      css = await readFile(join(here, file), 'utf8');
+      css = await readFile(join(SRC_DIR, file), 'utf8');
       // A UTF-8 BOM becomes part of the first selector in an inline style block.
       css = css.replace(/^\uFEFF/, '');
     } catch {
@@ -67,8 +68,71 @@ function localScriptPreloads(html) {
   return links.join('\n');
 }
 
+// 把图片换成 data URI：照片、Logo 一并进入密文，仓库里不再有可直连的图片
+const MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+};
+
+async function readAsset(ref) {
+  const clean = ref.split('?')[0].split('#')[0];
+  const webp = clean.replace(/\.(png|jpe?g)$/i, '.webp');
+  // 有预转换的 webp 就优先用它，体积约为原 png 的五分之一
+  for (const candidate of [webp, clean]) {
+    try {
+      return { buffer: await readFile(join(SRC_DIR, candidate)), path: candidate };
+    } catch {}
+  }
+  return null;
+}
+
+async function inlineImages(html) {
+  const pattern = /(<img\b[^>]*\bsrc=")([^"]+)(")/gi;
+  let out = html;
+
+  for (const match of html.match(pattern) || []) {
+    const ref = match.match(/\bsrc="([^"]+)"/i)[1];
+    if (/^(https?:|data:)/i.test(ref)) continue;
+
+    const asset = await readAsset(ref);
+    if (!asset) {
+      console.warn(`警告: 找不到图片 ${ref}，保持原引用`);
+      continue;
+    }
+
+    const ext = asset.path.slice(asset.path.lastIndexOf('.')).toLowerCase();
+    const uri = ext === '.svg'
+      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(asset.buffer.toString('utf8'))}`
+      : `data:${MIME[ext] || 'application/octet-stream'};base64,${asset.buffer.toString('base64')}`;
+
+    out = out.replace(match, () => match.replace(ref, uri));
+  }
+  return out;
+}
+
+// 内嵌字体：可变字重 300–700，只保留页面实际用到的字，约 200KB
+async function fontFaceCss() {
+  try {
+    const woff = await readFile(join(SRC_DIR, 'assets', 'noto-sans-sc-subset.woff2'));
+    return `
+@font-face{font-family:"Deck CJK";src:url(data:font/woff2;base64,${woff.toString('base64')}) format("woff2");font-weight:300 700;font-style:normal;font-display:block;}
+:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Deck CJK","Helvetica Neue","Segoe UI","Microsoft YaHei",sans-serif;}
+`;
+  } catch {
+    console.warn('警告: 没有找到子集字体文件，继续使用系统字体栈');
+    return '';
+  }
+}
+
 const preloads = localScriptPreloads(plaintext);
+const fontCss = await fontFaceCss();
 plaintext = await inlineLocalStyles(plaintext);
+if (fontCss) plaintext = plaintext.replace('</head>', `<style>${fontCss}</style>\n</head>`);
+plaintext = await inlineImages(plaintext);
 
 const salt = randomBytes(16);
 const iv = randomBytes(12);
