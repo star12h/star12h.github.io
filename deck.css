@@ -99,10 +99,11 @@ h3 { font-size: var(--heading); font-weight: 500; }
 .concept-steps { display: flex; gap: 80px; margin-top: 52px; }
 .concept-steps button { font-size: var(--heading); padding: 16px 8px; color: #c8c8cf; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid transparent; transition: color .25s, border-color .25s; }
 .concept-steps button span { font-size: var(--label); }
-.concept-steps button[aria-pressed=true] { color: white; border-color: var(--gold); }
+.concept-steps button[aria-current=step] { color: white; border-color: var(--gold); }
 .concept-detail { font-size: var(--label); color: var(--muted); margin-top: 26px; }
-.email { display: inline-flex; gap: 14px; font-size: var(--heading); margin-top: 40px; font-weight: 400; }
+.email { display: inline-flex; align-items: center; gap: 14px; font-size: var(--heading); margin-top: 40px; font-weight: 400; }
 .email span { color: var(--muted); }
+.arrow-icon { display: block; width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .resume-cta { margin-top: 40px; }
 
 /* ---------- glass material ---------- */

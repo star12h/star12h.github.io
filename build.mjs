@@ -22,26 +22,51 @@ const PAYLOAD_FILE = join(here, 'site.enc');
 
 let plaintext = await readFile(SOURCE, 'utf8');
 
-// 把 deck.css 内联进来：解密后样式和 HTML 同时到位，不会再闪一下无样式的白底
-async function inlineStyles(html) {
-  const linkPattern = /<link[^>]+href="deck\.css[^"]*"[^>]*>/i;
-  if (!linkPattern.test(html)) return html;
+// 把所有本地样式表内联进密文：解密后样式与 HTML 同时到位，不会有"无样式闪白"那一帧
+async function inlineLocalStyles(html) {
+  const linkPattern = /<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi;
+  const tags = html.match(linkPattern) || [];
+  let out = html;
 
-  let css;
-  try {
-    css = await readFile(join(here, 'deck.css'), 'utf8');
-  } catch {
-    console.warn('警告: 没找到 deck.css，样式停用外链，解密后可能闪一下无样式内容');
-    return html;
+  for (const tag of tags) {
+    const hrefMatch = tag.match(/href=["']([^"']+)["']/i);
+    if (!hrefMatch) continue;
+    const href = hrefMatch[1];
+    if (/^(https?:)?\/\//i.test(href) || href.indexOf('data:') === 0) continue;
+
+    const file = href.split('?')[0].split('#')[0];
+    let css;
+    try {
+      css = await readFile(join(here, file), 'utf8');
+    } catch {
+      console.warn(`警告: 找不到 ${file}，该样式保留外链；解密后可能闪一下无样式内容`);
+      continue;
+    }
+    if (css.includes('</style')) {
+      console.warn(`警告: ${file} 含 </style 片段，该样式保留外链`);
+      continue;
+    }
+    out = out.replace(tag, () => `<style>\n${css}\n</style>`);
   }
-  if (css.includes('</style')) {
-    console.warn('警告: deck.css 含 </style 片段，改为保留外链');
-    return html;
-  }
-  return html.replace(linkPattern, () => `<style>\n${css}\n</style>`);
+  return out;
 }
 
-plaintext = await inlineStyles(plaintext);
+// 门禁页先预取本地脚本，解锁后动画立刻开始
+function localScriptPreloads(html) {
+  const tags = html.match(/<script\b[^>]*src=["'][^"']+["'][^>]*>/gi) || [];
+  const links = [];
+  for (const tag of tags) {
+    const srcMatch = tag.match(/src=["']([^"']+)["']/i);
+    if (!srcMatch) continue;
+    const src = srcMatch[1];
+    if (/^(https?:)?\/\//i.test(src)) continue;
+    links.push(`<link rel="preload" as="script" href="${src}">`);
+  }
+  return links.join('\n');
+}
+
+const preloads = localScriptPreloads(plaintext);
+plaintext = await inlineLocalStyles(plaintext);
 
 const salt = randomBytes(16);
 const iv = randomBytes(12);
@@ -63,6 +88,7 @@ const shell = `<!doctype html>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#000000">
 <title>受保护页面</title>
+${preloads}
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23d4b46a'/%3E%3C/svg%3E">
 <style>
   :root {
