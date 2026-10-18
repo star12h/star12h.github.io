@@ -1,0 +1,4 @@
+# 明文母版留在本地，不进仓库
+src/
+# 密码不落仓库
+site-password.txt
