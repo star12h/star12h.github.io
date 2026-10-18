@@ -38,6 +38,8 @@ async function inlineLocalStyles(html) {
     let css;
     try {
       css = await readFile(join(here, file), 'utf8');
+      // A UTF-8 BOM becomes part of the first selector in an inline style block.
+      css = css.replace(/^\uFEFF/, '');
     } catch {
       console.warn(`警告: 找不到 ${file}，该样式保留外链；解密后可能闪一下无样式内容`);
       continue;
