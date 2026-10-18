@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { randomBytes, pbkdf2Sync, createCipheriv } from 'node:crypto';
+import { randomBytes, pbkdf2Sync, createCipheriv, createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -19,7 +20,7 @@ const ITERATIONS = 250000;
 const SRC_DIR = join(here, 'src');
 const SOURCE = join(SRC_DIR, 'index.html');
 const SHELL = join(here, 'index.html');
-const PAYLOAD_FILE = join(here, 'site.enc');
+const PAYLOAD_FILE = join(here, 'site-v3.3.1.enc');
 
 let plaintext = await readFile(SOURCE, 'utf8');
 
@@ -119,7 +120,7 @@ async function fontFaceCss() {
   try {
     const woff = await readFile(join(SRC_DIR, 'assets', 'source-han-sans-sc-subset.woff2'));
     return `
-@font-face{font-family:"Deck CJK";src:url(data:font/woff2;base64,${woff.toString('base64')}) format("woff2");font-weight:300 700;font-style:normal;font-display:block;}
+@font-face{font-family:"Deck CJK";src:url(data:font/woff2;base64,${woff.toString('base64')}) format("woff2");font-weight:300 700;font-style:normal;font-display:swap;}
 /* 内嵌思源黑体优先，统一各平台排版。 */
 :root{font-family:"Deck CJK","PingFang SC","Segoe UI",sans-serif;}
 /* 正文与标题保持自然字距，避免汉字收紧或过度拉开。 */
@@ -131,27 +132,40 @@ async function fontFaceCss() {
   }
 }
 
-const preloads = localScriptPreloads(plaintext);
-const fontCss = await fontFaceCss();
+const preloads = '';
+let fontCss;
+if(process.env.OFFLINE_OUTPUT)fontCss=await fontFaceCss();
+else fontCss='@font-face{font-family:"Deck CJK";src:url(assets/source-han-sans-sc-subset.woff2) format("woff2");font-weight:300 700;font-display:swap;}';
+
 plaintext = await inlineLocalStyles(plaintext);
 if (fontCss) plaintext = plaintext.replace('</head>', `<style>${fontCss}</style>\n</head>`);
-plaintext = await inlineImages(plaintext);
-
-if(process.env.OFFLINE_OUTPUT){
- const script=await readFile(join(here,'deck.js'),'utf8');
- const offline=plaintext.replace(/<script\b[^>]*src=["'][^"']+["'][^>]*>\s*<\/script>/i,'').replace('</body>',()=>'<script>'+script+'</script></body>');
- await writeFile(process.env.OFFLINE_OUTPUT,offline,'utf8');
+if(process.env.OFFLINE_OUTPUT)plaintext = await inlineImages(plaintext);
+else{
+ const portrait=await readFile(join(SRC_DIR,'assets/portrait.webp'));
+ plaintext=plaintext.replace(/src="assets\/portrait.png"/g,()=>`src="data:image/webp;base64,${portrait.toString('base64')}"`);
+ const refs=[...plaintext.matchAll(/<img\b[^>]*src="(assets\/[^"]+)"/gi)].map(match=>match[1]);
+ for(const ref of new Set(refs)){const asset=await readAsset(ref);if(!asset)throw Error('Missing public asset: '+ref);plaintext=plaintext.replaceAll('src="'+ref+'"','src="'+asset.path+'"');}
 }
+
+
+const script=await readFile(join(here,'deck.js'),'utf8');
+plaintext=plaintext.replace(/<script\b[^>]*src=["'][^"']+["'][^>]*>\s*<\/script>/i,'').replace('</body>',()=>'<script>'+script+'</script></body>');
+plaintext=plaintext.replace('<html lang="zh-CN">','<html lang="zh-CN" style="background:#000;color:#fff">');
+if(process.env.OFFLINE_OUTPUT)await writeFile(process.env.OFFLINE_OUTPUT,plaintext,'utf8');
 const salt = randomBytes(16);
 const iv = randomBytes(12);
 const key = pbkdf2Sync(normalize(password), salt, ITERATIONS, 32, 'sha256');
 
 const cipher = createCipheriv('aes-256-gcm', key, iv);
-const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+const compressed=gzipSync(Buffer.from(plaintext,'utf8'),{level:9});
+const ciphertext = Buffer.concat([cipher.update(compressed), cipher.final()]);
 const tag = cipher.getAuthTag();
 
 // WebCrypto 的 AES-GCM 约定密文尾部带 16 字节认证标签
-const payload = Buffer.concat([salt, iv, ciphertext, tag]).toString('base64');
+const payload = Buffer.concat([Buffer.from('MTP4'),salt,iv,ciphertext,tag]);
+const version=createHash('sha256').update(payload).digest('hex').slice(0,12);
+const gzipDecoder=await readFile(join(SRC_DIR,'gzip-fallback.js'),'utf8');
+const gateRuntime=(await readFile(join(here,'gate-runtime.js'),'utf8')).replace('__SIZE__',String(payload.length)).replace('__VERSION__',version);
 
 // 门禁页与密文分离：换密码只动 site.enc，浏览器缓存不会挡住更新
 const shell = `<!doctype html>
@@ -163,6 +177,7 @@ const shell = `<!doctype html>
 <meta name="theme-color" content="#000000">
 <title>受保护页面</title>
 ${preloads}
+<link rel="preload" as="font" type="font/woff2" href="assets/source-han-sans-sc-subset.woff2" crossorigin fetchpriority="low">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23d4b46a'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -325,6 +340,22 @@ ${preloads}
     outline: 2px solid var(--gold);
     outline-offset: 4px;
   }
+
+  .loading-status{margin-top:24px;padding-top:20px;border-top:1px solid var(--line);}
+  .load-head{display:flex;align-items:center;gap:10px;font-size:13px;line-height:1.6;}
+  .load-head #load-percent{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  #load-retry{font:inherit;font-size:12px;color:var(--gold);border:0;background:none;cursor:pointer;padding:4px 0 4px 8px;}
+  .loader{width:14px;height:14px;flex:none;border:1.5px solid rgba(255,255,255,.16);border-top-color:var(--gold);border-radius:50%;animation:loading-spin .9s linear infinite;}
+  [data-state=ready] .loader{animation:none;border-color:var(--gold);background:var(--gold);width:7px;height:7px;margin:0 3.5px;}
+  [data-state=error] .loader{animation:none;border-color:var(--muted);}
+  .load-track{height:3px;margin-top:13px;overflow:hidden;background:rgba(255,255,255,.1);border-radius:3px;}
+  .load-track>span{display:block;width:0;height:100%;background:var(--gold);transition:width .18s linear;}
+  .load-track.indeterminate>span{width:35%!important;animation:loading-sweep 1.3s ease-in-out infinite;}
+  .load-steps{display:flex;justify-content:space-between;gap:8px;margin-top:11px;font-size:10.5px;letter-spacing:.02em;color:var(--muted);}
+  .load-steps [data-state=active]{color:var(--fg);}.load-steps [data-state=done]{color:var(--gold);}
+  @keyframes loading-spin{to{transform:rotate(360deg)}}
+  @keyframes loading-sweep{from{transform:translateX(-110%)}to{transform:translateX(390%)}}
+  @media(prefers-reduced-motion:reduce){.loader,.load-track.indeterminate>span{animation:none}.load-track>span{transition:none}}
   .msg {
     min-height: 20px;
     margin: 14px 0 0;
@@ -348,125 +379,16 @@ ${preloads}
     <button type="button" id="toggle" class="toggle" aria-pressed="false" aria-label="显示密码">显示</button>
   </div>
   <button id="go" class="gate-btn" type="submit">打开 <span>→</span></button>
+  <div class="loading-status" id="loading" role="status" aria-live="polite" aria-busy="true" data-state="loading">
+    <div class="load-head"><span class="loader" aria-hidden="true"></span><span id="load-title">正在加载内容</span><span id="load-percent">0%</span><button id="load-retry" type="button" aria-label="重新加载内容" hidden>重试</button></div>
+    <div class="load-track" id="load-track" role="progressbar" aria-label="加载内容" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="load-fill"></span></div>
+    <div class="load-steps"><span data-load-step="download" data-state="active">加载内容</span><span data-load-step="decrypt">安全解锁</span><span data-load-step="prepare">准备展示</span></div>
+  </div>
   <p class="msg" id="msg" role="status" aria-live="polite"></p>
 </form>
 
-<script>
-const PAYLOAD_URL = 'site.enc';
-const ITERATIONS = ${ITERATIONS};
-
-function fromB64(s) {
-  const clean = s.replace(/\\s+/g, '');
-  const bin = atob(clean);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function loadPayload() {
-  const res = await fetch(PAYLOAD_URL + '?v=' + Date.now(), { cache: 'no-store' });
-  if (!res.ok) throw new Error('payload ' + res.status);
-  return fromB64(await res.text());
-}
-
-async function unlock(password, raw) {
-  const salt = raw.slice(0, 16);
-  const iv = raw.slice(16, 28);
-  const data = raw.slice(28);
-
-  // 与加密端一致：去空白 + 转小写，所以大小写都能解开
-  const normalized = password.trim().toLowerCase();
-
-  const baseKey = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(normalized), 'PBKDF2', false, ['deriveKey']
-  );
-  const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: ITERATIONS, hash: 'SHA-256' },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt']
-  );
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-  return new TextDecoder().decode(plain);
-}
-
-function preloadImages(html) {
-  let srcs = [];
-  try {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    srcs = [...doc.querySelectorAll('img[src]')]
-      .map((img) => img.getAttribute('src'))
-      .filter((src) => src && src.indexOf('data:') !== 0);
-  } catch {
-    return Promise.resolve();
-  }
-  if (!srcs.length) return Promise.resolve();
-  const loads = srcs.map((src) => new Promise((resolve) => {
-    const probe = new Image();
-    probe.onload = probe.onerror = () => resolve();
-    probe.src = src;
-  }));
-  return Promise.race([
-    Promise.all(loads),
-    new Promise((resolve) => setTimeout(resolve, 1200)),
-  ]);
-}
-
-const form = document.getElementById('gate');
-const input = document.getElementById('pw');
-const toggle = document.getElementById('toggle');
-const button = document.getElementById('go');
-const msg = document.getElementById('msg');
-
-toggle.addEventListener('click', () => {
-  const hidden = input.type === 'password';
-  input.type = hidden ? 'text' : 'password';
-  toggle.textContent = hidden ? '隐藏' : '显示';
-  toggle.setAttribute('aria-pressed', String(hidden));
-  input.focus();
-});
-
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (!input.value) return;
-  button.disabled = true;
-  msg.textContent = '正在解密…';
-
-  if (!window.crypto || !window.crypto.subtle) {
-    msg.textContent = '当前浏览器或网址不支持解密（需要 HTTPS），换个浏览器试试。';
-    button.disabled = false;
-    return;
-  }
-
-  let raw;
-  try {
-    raw = await loadPayload();
-  } catch {
-    msg.textContent = '密文文件没加载成功，检查一下网络后重试。';
-    button.disabled = false;
-    return;
-  }
-
-  let html;
-  try {
-    html = await unlock(input.value, raw);
-  } catch {
-    msg.textContent = '密码不对，再试一次。';
-    button.disabled = false;
-    input.select();
-    return;
-  }
-
-  // 图片先下好再切换文档，避免解密后一块块跳出来
-  msg.textContent = '正在准备…';
-  await preloadImages(html);
-
-  document.open();
-  document.write(html);
-  document.close();
-});
-</script>
+<script>${gzipDecoder}</script>
+<script>${gateRuntime}</script>
 </body>
 </html>
 `;
@@ -475,5 +397,5 @@ await writeFile(SHELL, shell, 'utf8');
 await writeFile(PAYLOAD_FILE, payload, 'utf8');
 
 console.log(`门禁页 index.html ${Buffer.byteLength(shell)} 字节`);
-console.log(`密文 site.enc ${payload.length} 字节（已内联 deck.css）`);
+console.log(`密文 site-v3.3.1.enc ${payload.length} 字节`);
 console.log(`PBKDF2 ${ITERATIONS} 次迭代，密码不区分大小写`);
