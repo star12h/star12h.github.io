@@ -6,11 +6,14 @@ import { dirname, join } from 'node:path';
 const here = dirname(fileURLToPath(import.meta.url));
 const password = process.argv[2] || process.env.SITE_PASSWORD;
 
-if (!password || password.length < 6) {
+if (!password || password.trim().length < 6) {
   console.error('用法: node build.mjs <密码>   或   SITE_PASSWORD=xxx node build.mjs');
   console.error('密码至少 6 位。');
   process.exit(1);
 }
+
+// 密码不区分大小写：加密和解密两端都先归一化
+const normalize = (value) => value.trim().toLowerCase();
 
 const ITERATIONS = 250000;
 const SOURCE = join(here, 'src', 'index.html');
@@ -20,7 +23,7 @@ const plaintext = await readFile(SOURCE, 'utf8');
 
 const salt = randomBytes(16);
 const iv = randomBytes(12);
-const key = pbkdf2Sync(password, salt, ITERATIONS, 32, 'sha256');
+const key = pbkdf2Sync(normalize(password), salt, ITERATIONS, 32, 'sha256');
 
 const cipher = createCipheriv('aes-256-gcm', key, iv);
 const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
@@ -83,23 +86,43 @@ const shell = `<!doctype html>
     color: var(--muted);
     margin: 0 0 24px;
   }
-  input {
+  .field { position: relative; margin-bottom: 14px; }
+  input[type="password"], input[type="text"] {
     width: 100%;
     font: inherit;
     font-size: 15px;
-    padding: 11px 13px;
+    padding: 11px 62px 11px 13px;
     border: 1px solid var(--rule);
     border-radius: 6px;
     background: #fffdfa;
     color: var(--ink);
-    margin-bottom: 10px;
   }
   input:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(168, 73, 43, 0.12);
   }
-  button {
+  .toggle {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.16s ease, background 0.16s ease;
+  }
+  .toggle:hover {
+    color: var(--accent);
+    background: rgba(168, 73, 43, 0.07);
+  }
+  .gate-btn {
     width: 100%;
     font: inherit;
     font-size: 14px;
@@ -111,10 +134,11 @@ const shell = `<!doctype html>
     cursor: pointer;
     transition: opacity 0.16s ease;
   }
-  button:hover { opacity: 0.86; }
-  button:disabled { opacity: 0.5; cursor: progress; }
+  .gate-btn:hover { opacity: 0.86; }
+  .gate-btn:disabled { opacity: 0.5; cursor: progress; }
   .msg {
     font-size: 13px;
+    line-height: 1.6;
     color: var(--accent);
     min-height: 20px;
     margin: 12px 0 0;
@@ -125,9 +149,12 @@ const shell = `<!doctype html>
 <form id="gate" autocomplete="off">
   <p class="label">PRIVATE</p>
   <h1>这个页面需要密码</h1>
-  <p class="hint">内容已加密保存，输入密码后在本地解密显示。</p>
-  <input id="pw" type="password" placeholder="访问密码" aria-label="访问密码" autofocus required>
-  <button id="go" type="submit">打开</button>
+  <p class="hint">内容已加密保存，输入密码后在本地解密显示。密码不区分大小写。</p>
+  <div class="field">
+    <input id="pw" type="password" placeholder="访问密码" aria-label="访问密码" autofocus required>
+    <button type="button" id="toggle" class="toggle" aria-pressed="false" aria-label="显示密码">显示</button>
+  </div>
+  <button id="go" class="gate-btn" type="submit">打开</button>
   <p class="msg" id="msg" role="status" aria-live="polite"></p>
 </form>
 
@@ -148,8 +175,11 @@ async function unlock(password) {
   const iv = raw.slice(16, 28);
   const data = raw.slice(28);
 
+  // 与加密端一致：去空白 + 转小写，所以大小写都能解开
+  const normalized = password.trim().toLowerCase();
+
   const baseKey = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']
+    'raw', new TextEncoder().encode(normalized), 'PBKDF2', false, ['deriveKey']
   );
   const key = await crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: ITERATIONS, hash: 'SHA-256' },
@@ -164,8 +194,17 @@ async function unlock(password) {
 
 const form = document.getElementById('gate');
 const input = document.getElementById('pw');
+const toggle = document.getElementById('toggle');
 const button = document.getElementById('go');
 const msg = document.getElementById('msg');
+
+toggle.addEventListener('click', () => {
+  const hidden = input.type === 'password';
+  input.type = hidden ? 'text' : 'password';
+  toggle.textContent = hidden ? '隐藏' : '显示';
+  toggle.setAttribute('aria-pressed', String(hidden));
+  input.focus();
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -178,7 +217,9 @@ form.addEventListener('submit', async (event) => {
     document.write(html);
     document.close();
   } catch {
-    msg.textContent = '密码不对，再试一次。';
+    msg.textContent = !window.crypto || !window.crypto.subtle
+      ? '当前浏览器或网址不支持解密（需要 HTTPS），换个浏览器试试。'
+      : '密码不对。确定没打错的话，按 Ctrl+Shift+R 强制刷新再试（可能加载了旧版本）。';
     button.disabled = false;
     input.select();
   }
@@ -189,4 +230,4 @@ form.addEventListener('submit', async (event) => {
 `;
 
 await writeFile(OUTPUT, shell, 'utf8');
-console.log(`已生成加密页面 index.html（${Buffer.byteLength(shell)} 字节，PBKDF2 ${ITERATIONS} 次迭代）`);
+console.log(`已生成加密页面 index.html（${Buffer.byteLength(shell)} 字节，PBKDF2 ${ITERATIONS} 次迭代，密码不区分大小写）`);
