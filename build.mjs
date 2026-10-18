@@ -17,7 +17,8 @@ const normalize = (value) => value.trim().toLowerCase();
 
 const ITERATIONS = 250000;
 const SOURCE = join(here, 'src', 'index.html');
-const OUTPUT = join(here, 'index.html');
+const SHELL = join(here, 'index.html');
+const PAYLOAD_FILE = join(here, 'site.enc');
 
 const plaintext = await readFile(SOURCE, 'utf8');
 
@@ -32,6 +33,7 @@ const tag = cipher.getAuthTag();
 // WebCrypto 的 AES-GCM 约定密文尾部带 16 字节认证标签
 const payload = Buffer.concat([salt, iv, ciphertext, tag]).toString('base64');
 
+// 门禁页保持稳定，密文单独存文件：换密码只动 site.enc，浏览器缓存不会挡住更新
 const shell = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -87,7 +89,7 @@ const shell = `<!doctype html>
     margin: 0 0 24px;
   }
   .field { position: relative; margin-bottom: 14px; }
-  input[type="password"], input[type="text"] {
+  input {
     width: 100%;
     font: inherit;
     font-size: 15px;
@@ -159,18 +161,24 @@ const shell = `<!doctype html>
 </form>
 
 <script>
-const PAYLOAD = "${payload}";
+const PAYLOAD_URL = 'site.enc';
 const ITERATIONS = ${ITERATIONS};
 
 function fromB64(s) {
-  const bin = atob(s);
+  const clean = s.replace(/\\s+/g, '');
+  const bin = atob(clean);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-async function unlock(password) {
-  const raw = fromB64(PAYLOAD);
+async function loadPayload() {
+  const res = await fetch(PAYLOAD_URL + '?v=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error('payload ' + res.status);
+  return fromB64(await res.text());
+}
+
+async function unlock(password, raw) {
   const salt = raw.slice(0, 16);
   const iv = raw.slice(16, 28);
   const data = raw.slice(28);
@@ -211,15 +219,29 @@ form.addEventListener('submit', async (event) => {
   if (!input.value) return;
   button.disabled = true;
   msg.textContent = '正在解密…';
+
+  if (!window.crypto || !window.crypto.subtle) {
+    msg.textContent = '当前浏览器或网址不支持解密（需要 HTTPS），换个浏览器试试。';
+    button.disabled = false;
+    return;
+  }
+
+  let raw;
   try {
-    const html = await unlock(input.value);
+    raw = await loadPayload();
+  } catch {
+    msg.textContent = '密文文件没加载成功，检查一下网络后重试。';
+    button.disabled = false;
+    return;
+  }
+
+  try {
+    const html = await unlock(input.value, raw);
     document.open();
     document.write(html);
     document.close();
   } catch {
-    msg.textContent = !window.crypto || !window.crypto.subtle
-      ? '当前浏览器或网址不支持解密（需要 HTTPS），换个浏览器试试。'
-      : '密码不对。确定没打错的话，按 Ctrl+Shift+R 强制刷新再试（可能加载了旧版本）。';
+    msg.textContent = '密码不对，再试一次。';
     button.disabled = false;
     input.select();
   }
@@ -229,5 +251,9 @@ form.addEventListener('submit', async (event) => {
 </html>
 `;
 
-await writeFile(OUTPUT, shell, 'utf8');
-console.log(`已生成加密页面 index.html（${Buffer.byteLength(shell)} 字节，PBKDF2 ${ITERATIONS} 次迭代，密码不区分大小写）`);
+await writeFile(SHELL, shell, 'utf8');
+await writeFile(PAYLOAD_FILE, payload, 'utf8');
+
+console.log(`门禁页 index.html ${Buffer.byteLength(shell)} 字节`);
+console.log(`密文 site.enc ${payload.length} 字节`);
+console.log(`PBKDF2 ${ITERATIONS} 次迭代，密码不区分大小写`);
