@@ -117,13 +117,13 @@ async function inlineImages(html) {
 // 内嵌字体：可变字重 300–700，只保留页面实际用到的字，约 200KB
 async function fontFaceCss() {
   try {
-    const woff = await readFile(join(SRC_DIR, 'assets', 'noto-sans-sc-subset.woff2'));
+    const woff = await readFile(join(SRC_DIR, 'assets', 'source-han-sans-sc-subset.woff2'));
     return `
 @font-face{font-family:"Deck CJK";src:url(data:font/woff2;base64,${woff.toString('base64')}) format("woff2");font-weight:300 700;font-style:normal;font-display:block;}
-/* 内嵌字体排在苹方之前：中文在苹果设备上也统一用同一套字形；拉丁仍优先系统字体 */
-:root{font-family:-apple-system,BlinkMacSystemFont,"Deck CJK","PingFang SC","Helvetica Neue","Segoe UI","Microsoft YaHei",sans-serif;}
-/* 苹方字面偏窄，原设计的负字距刚好；思源黑体字面更宽，负字距会显得挤，回收到轻微正字距 */
-.slide h1,.slide h2{letter-spacing:.02em;}
+/* 内嵌思源黑体优先，统一各平台排版。 */
+:root{font-family:"Deck CJK","PingFang SC","Segoe UI",sans-serif;}
+/* 正文与标题保持自然字距，避免汉字收紧或过度拉开。 */
+.slide h1,.slide h2{letter-spacing:0;}
 `;
   } catch {
     console.warn('警告: 没有找到子集字体文件，继续使用系统字体栈');
@@ -137,6 +137,11 @@ plaintext = await inlineLocalStyles(plaintext);
 if (fontCss) plaintext = plaintext.replace('</head>', `<style>${fontCss}</style>\n</head>`);
 plaintext = await inlineImages(plaintext);
 
+if(process.env.OFFLINE_OUTPUT){
+ const script=await readFile(join(here,'deck.js'),'utf8');
+ const offline=plaintext.replace(/<script\b[^>]*src=["'][^"']+["'][^>]*>\s*<\/script>/i,'').replace('</body>',()=>'<script>'+script+'</script></body>');
+ await writeFile(process.env.OFFLINE_OUTPUT,offline,'utf8');
+}
 const salt = randomBytes(16);
 const iv = randomBytes(12);
 const key = pbkdf2Sync(normalize(password), salt, ITERATIONS, 32, 'sha256');

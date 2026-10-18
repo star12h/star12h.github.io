@@ -19,7 +19,37 @@ function fit(){
 function showDock(autoHide=true){document.body.classList.add('dock-on');clearTimeout(peekTimer);if(autoHide)peekTimer=setTimeout(hideDock,2400)}
 function hideDock(){clearTimeout(peekTimer);if(document.querySelector('#dock :focus-visible'))return;document.body.classList.remove('dock-on')}
 
-function go(index,updateHash=true){const previous=current;current=Math.max(0,Math.min(slides.length-1,index));canvas.style.setProperty('--enter-x',current<previous?'-24px':'24px');const oldFocus=document.activeElement;slides.forEach((s,i)=>{s.hidden=i!==current;s.inert=i!==current;s.tabIndex=-1});if(oldFocus?.closest('.slide')?.hidden)slides[current].focus({preventScroll:true});document.querySelector('#page-input').value=current+1;document.querySelector('#total').textContent=String(slides.length).padStart(2,'0');const title=document.querySelector('#current-title');title.replaceChildren(Object.assign(document.createElement('span'),{className:'title-text',textContent:slides[current].dataset.title}),Object.assign(document.createElement('span'),{className:'dock-key',textContent:'目录'}));document.querySelector('#page-announcement').textContent=`第 ${current+1} 页，共 ${slides.length} 页：${slides[current].dataset.title}`;const p=document.querySelector('#progress');p.setAttribute('aria-valuemax',slides.length);p.setAttribute('aria-valuenow',current+1);p.firstElementChild.style.width=(current+1)/slides.length*100+'%';document.querySelector('#prev').disabled=current===0;document.querySelector('#next-page').disabled=current===slides.length-1;document.querySelectorAll('#toc-grid button').forEach((b,i)=>{if(i===current)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});if(previous!==current)slides[current].scrollTop=0;if(updateHash)history.replaceState(null,'','#'+slides[current].id);setShape(slides[current].dataset.shape);if(slides[current].id==='products'&&spinReset)spinReset();document.dispatchEvent(new Event('deckchange'))}
+let pageTransition=[],hasPresented=false;
+function go(index,updateHash=true){
+  const previous=current,next=Math.max(0,Math.min(slides.length-1,index));
+  if(hasPresented&&next===current)return;
+  const oldFocus=document.activeElement;
+  for(const animation of pageTransition)animation.cancel();
+  pageTransition=[];current=next;
+  const outgoing=slides[previous],incoming=slides[current];
+  const animate=hasPresented&&previous!==current&&!reduceMotion.matches&&Boolean(incoming.animate);
+  slides.forEach((slide,i)=>{
+    slide.hidden=i!==current&&!(animate&&i===previous);
+    slide.inert=i!==current;slide.tabIndex=-1;
+    slide.setAttribute('aria-hidden',String(i!==current));
+    slide.style.zIndex=i===current?'2':'1';
+  });
+  if(previous!==current)incoming.scrollTop=0;
+  if(oldFocus?.closest('.slide')?.inert)incoming.focus({preventScroll:true});
+  if(animate){
+    const direction=current<previous?-1:1;
+    const distance=(innerWidth<800?18:28)*direction;
+    const options={duration:560,easing:'cubic-bezier(.22,.8,.25,1)',fill:'both'};
+    const exit=outgoing.animate([{opacity:1,transform:'translate3d(0,0,0)'},{opacity:0,transform:'translate3d('+(-distance)+'px,0,0)'}],options);
+    const enter=incoming.animate([{opacity:0,transform:'translate3d('+distance+'px,0,0)'},{opacity:1,transform:'translate3d(0,0,0)'}],options);
+    pageTransition=[exit,enter];
+    Promise.all([exit.finished,enter.finished]).then(()=>{
+      if(current!==next||pageTransition[1]!==enter)return;
+      outgoing.hidden=true;exit.cancel();enter.cancel();pageTransition=[];
+    }).catch(()=>{});
+  }
+  hasPresented=true;
+  document.querySelector('#page-input').value=current+1;document.querySelector('#total').textContent=String(slides.length).padStart(2,'0');const title=document.querySelector('#current-title');title.replaceChildren(Object.assign(document.createElement('span'),{className:'title-text',textContent:slides[current].dataset.title}),Object.assign(document.createElement('span'),{className:'dock-key',textContent:'目录'}));document.querySelector('#page-announcement').textContent=`第 ${current+1} 页，共 ${slides.length} 页：${slides[current].dataset.title}`;const p=document.querySelector('#progress');p.setAttribute('aria-valuemax',slides.length);p.setAttribute('aria-valuenow',current+1);p.firstElementChild.style.width=(current+1)/slides.length*100+'%';document.querySelector('#prev').disabled=current===0;document.querySelector('#next-page').disabled=current===slides.length-1;document.querySelectorAll('#toc-grid button').forEach((b,i)=>{if(i===current)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});if(updateHash)history.replaceState(null,'','#'+slides[current].id);setShape(slides[current].dataset.shape);if(slides[current].id==='products'&&spinReset)spinReset();document.dispatchEvent(new Event('deckchange'))}
 function fromHash(){const i=slides.findIndex(s=>'#'+s.id===location.hash);go(i<0?0:i,false)}
 function openDialog(d){returnFocus=document.activeElement;d.tabIndex=-1;d.showModal();if(!keyboardInput)d.focus({preventScroll:true});document.body.classList.add('dialog-open');if(d===profile){profile.querySelector('.resume-main').scrollTop=0;setResumeNav('resume-work')}}for(const d of dialogs){d.querySelector('[data-close]').onclick=()=>d.close();d.addEventListener('click',e=>{if(e.target!==d)return;const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close()});d.addEventListener('close',()=>{if(!dialogs.some(x=>x.open))document.body.classList.remove('dialog-open');if(returnFocus?.isConnected&&!returnFocus.closest('[hidden]'))returnFocus.focus({preventScroll:true});else document.querySelector('#current-title').focus({preventScroll:true})})}
 slides.forEach((s,i)=>{const b=document.createElement('button'),n=document.createElement('span');n.className='toc-number';n.textContent=String(i+1).padStart(2,'0');b.append(n,document.createTextNode(s.dataset.title));b.onclick=()=>{go(i);overview.close()};document.querySelector('#toc-grid').append(b)});
@@ -83,6 +113,25 @@ document.addEventListener('fullscreenchange',()=>{if(document.activeElement?.clo
 
 
 const resumeMain=profile.querySelector('.resume-main'),resumeNav=[...profile.querySelectorAll('[data-resume-target]')];
+async function copyEmail(value){
+  try{
+    if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);
+    else{
+      const field=document.createElement('textarea');field.value=value;field.readOnly=true;
+      field.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';document.body.append(field);
+      const focused=document.activeElement;field.select();field.setSelectionRange(0,value.length);
+      const copied=document.execCommand('copy');field.remove();focused?.focus({preventScroll:true});
+      if(!copied)throw Error('copy unavailable');
+    }
+    notice('邮箱已复制');
+  }catch{notice('邮箱：'+value+'，可长按选择复制');}
+}
+document.querySelectorAll('a[href^="mailto:"]').forEach(link=>{
+  const value=link.getAttribute('href').slice(7);link.setAttribute('role','button');
+  link.setAttribute('aria-label','复制邮箱 '+value);link.title='点击复制邮箱';
+  link.addEventListener('click',event=>{event.preventDefault();copyEmail(value)});
+  link.addEventListener('keydown',event=>{if(event.key===' '){event.preventDefault();copyEmail(value)}});
+});
 function setResumeNav(id){for(const b of resumeNav){if(b.dataset.resumeTarget===id)b.setAttribute('aria-current','location');else b.removeAttribute('aria-current')}}
 for(const b of resumeNav)b.onclick=()=>{const target=document.getElementById(b.dataset.resumeTarget),top=target.getBoundingClientRect().top-resumeMain.getBoundingClientRect().top+resumeMain.scrollTop-24;resumeMain.scrollTo({top,behavior:reduceMotion.matches?'instant':'smooth'});setResumeNav(target.id)};
 let resumeScrollFrame=0;resumeMain.addEventListener('scroll',()=>{if(resumeScrollFrame)return;resumeScrollFrame=requestAnimationFrame(()=>{resumeScrollFrame=0;let id='resume-work';const y=resumeMain.getBoundingClientRect().top;for(const b of resumeNav){const s=document.getElementById(b.dataset.resumeTarget);if(s.getBoundingClientRect().top-y<150)id=s.id}setResumeNav(id)})},{passive:true});
