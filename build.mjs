@@ -120,7 +120,10 @@ async function fontFaceCss() {
     const woff = await readFile(join(SRC_DIR, 'assets', 'noto-sans-sc-subset.woff2'));
     return `
 @font-face{font-family:"Deck CJK";src:url(data:font/woff2;base64,${woff.toString('base64')}) format("woff2");font-weight:300 700;font-style:normal;font-display:block;}
-:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Deck CJK","Helvetica Neue","Segoe UI","Microsoft YaHei",sans-serif;}
+/* 内嵌字体排在苹方之前：中文在苹果设备上也统一用同一套字形；拉丁仍优先系统字体 */
+:root{font-family:-apple-system,BlinkMacSystemFont,"Deck CJK","PingFang SC","Helvetica Neue","Segoe UI","Microsoft YaHei",sans-serif;}
+/* 苹方字面偏窄，原设计的负字距刚好；思源黑体字面更宽，负字距会显得挤，回收到轻微正字距 */
+.slide h1,.slide h2{letter-spacing:.02em;}
 `;
   } catch {
     console.warn('警告: 没有找到子集字体文件，继续使用系统字体栈');
