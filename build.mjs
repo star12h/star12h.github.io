@@ -20,7 +20,28 @@ const SOURCE = join(here, 'src', 'index.html');
 const SHELL = join(here, 'index.html');
 const PAYLOAD_FILE = join(here, 'site.enc');
 
-const plaintext = await readFile(SOURCE, 'utf8');
+let plaintext = await readFile(SOURCE, 'utf8');
+
+// 把 deck.css 内联进来：解密后样式和 HTML 同时到位，不会再闪一下无样式的白底
+async function inlineStyles(html) {
+  const linkPattern = /<link[^>]+href="deck\.css[^"]*"[^>]*>/i;
+  if (!linkPattern.test(html)) return html;
+
+  let css;
+  try {
+    css = await readFile(join(here, 'deck.css'), 'utf8');
+  } catch {
+    console.warn('警告: 没找到 deck.css，样式停用外链，解密后可能闪一下无样式内容');
+    return html;
+  }
+  if (css.includes('</style')) {
+    console.warn('警告: deck.css 含 </style 片段，改为保留外链');
+    return html;
+  }
+  return html.replace(linkPattern, () => `<style>\n${css}\n</style>`);
+}
+
+plaintext = await inlineStyles(plaintext);
 
 const salt = randomBytes(16);
 const iv = randomBytes(12);
@@ -33,130 +54,200 @@ const tag = cipher.getAuthTag();
 // WebCrypto 的 AES-GCM 约定密文尾部带 16 字节认证标签
 const payload = Buffer.concat([salt, iv, ciphertext, tag]).toString('base64');
 
-// 门禁页保持稳定，密文单独存文件：换密码只动 site.enc，浏览器缓存不会挡住更新
+// 门禁页与密文分离：换密码只动 site.enc，浏览器缓存不会挡住更新
 const shell = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#faf8f4">
+<meta name="theme-color" content="#000000">
 <title>受保护页面</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23faf8f4'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%231a1714'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%23000'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23d4b46a'/%3E%3C/svg%3E">
 <style>
   :root {
-    --paper: #faf8f4;
-    --ink: #1a1714;
-    --muted: #6e6862;
-    --rule: #e2dbd1;
-    --accent: #a8492b;
+    color-scheme: dark;
+    --fg: #fff;
+    --muted: #a1a1a6;
+    --gold: #d4b46a;
+    --line: rgba(255, 255, 255, .16);
+    --glass: rgba(255, 255, 255, .06);
+    --ease: cubic-bezier(.22, 1, .36, 1);
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    min-height: 100vh;
+    background: #000;
+    color: var(--fg);
     display: grid;
     place-items: center;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Segoe UI", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* 与 deck 同一套环境光 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(44% 50% at 13% 84%, rgba(212, 180, 106, .10), transparent 72%),
+      radial-gradient(40% 46% at 80% 10%, rgba(72, 122, 255, .11), transparent 70%),
+      radial-gradient(52% 58% at 52% 108%, rgba(140, 110, 220, .07), transparent 74%);
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to bottom, rgba(255, 255, 255, .05), rgba(255, 255, 255, 0) 15%),
+      radial-gradient(132% 112% at 50% 46%, rgba(255, 255, 255, 0) 40%, rgba(0, 0, 0, .55) 100%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='.055'/%3E%3C/svg%3E");
   }
   form {
+    position: relative;
+    z-index: 1;
     width: 100%;
-    max-width: 340px;
-    border-top: 1px solid var(--ink);
-    padding-top: 28px;
+    max-width: 404px;
+    padding: 44px 40px 34px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--glass);
+    backdrop-filter: blur(26px) saturate(120%);
+    -webkit-backdrop-filter: blur(26px) saturate(120%);
+    box-shadow: 0 40px 90px -50px rgba(0, 0, 0, .95);
   }
-  .label {
-    font-family: ui-monospace, Menlo, Consolas, monospace;
-    font-size: 11px;
-    letter-spacing: 0.18em;
-    color: var(--accent);
-    margin: 0 0 18px;
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 22px;
+    font-size: 11.5px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .eyebrow::before {
+    content: '';
+    width: 26px;
+    height: 1px;
+    background: currentColor;
+    opacity: .55;
+    flex: none;
   }
   h1 {
-    font-family: Georgia, "Songti SC", "Source Han Serif SC", serif;
-    font-size: 23px;
+    margin: 0 0 14px;
+    font-size: clamp(25px, 4vw, 33px);
+    letter-spacing: -.8px;
+    line-height: 1.3;
     font-weight: 500;
-    letter-spacing: 0.04em;
-    margin: 0 0 10px;
+    background: linear-gradient(178deg, #fff 34%, #b9b9c4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
-  p.hint {
+  .hint {
+    margin: 0 0 28px;
     font-size: 13.5px;
-    line-height: 1.75;
+    line-height: 1.85;
     color: var(--muted);
-    margin: 0 0 24px;
   }
-  .field { position: relative; margin-bottom: 14px; }
+  .field { position: relative; margin-bottom: 16px; }
   input {
     width: 100%;
     font: inherit;
     font-size: 15px;
-    padding: 11px 62px 11px 13px;
-    border: 1px solid var(--rule);
-    border-radius: 6px;
-    background: #fffdfa;
-    color: var(--ink);
+    padding: 15px 66px 15px 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, .38);
+    color: var(--fg);
+    transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
   }
+  input::placeholder { color: rgba(255, 255, 255, .3); }
   input:focus {
     outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(168, 73, 43, 0.12);
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(212, 180, 106, .16);
   }
   .toggle {
     position: absolute;
-    right: 4px;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     font: inherit;
     font-size: 12px;
-    letter-spacing: 0.06em;
-    padding: 7px 10px;
+    letter-spacing: .08em;
+    padding: 8px 10px;
     border: 0;
-    border-radius: 5px;
+    border-radius: 8px;
     background: transparent;
     color: var(--muted);
     cursor: pointer;
-    transition: color 0.16s ease, background 0.16s ease;
+    transition: color .2s var(--ease);
   }
-  .toggle:hover {
-    color: var(--accent);
-    background: rgba(168, 73, 43, 0.07);
-  }
+  .toggle:hover { color: var(--gold); }
   .gate-btn {
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
     font: inherit;
-    font-size: 14px;
-    padding: 11px 13px;
-    border: 1px solid var(--ink);
-    border-radius: 6px;
-    background: var(--ink);
-    color: var(--paper);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 15px 18px;
+    border: 1px solid rgba(212, 180, 106, .5);
+    border-radius: 12px;
+    background: var(--gold);
+    color: #0a0a0a;
     cursor: pointer;
-    transition: opacity 0.16s ease;
+    transition: transform .25s var(--ease), box-shadow .25s var(--ease), opacity .2s var(--ease);
   }
-  .gate-btn:hover { opacity: 0.86; }
-  .gate-btn:disabled { opacity: 0.5; cursor: progress; }
+  .gate-btn span { transition: transform .3s var(--ease); }
+  .gate-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px -16px rgba(212, 180, 106, .85);
+  }
+  .gate-btn:hover span { transform: translateX(4px); }
+  .gate-btn:disabled {
+    opacity: .5;
+    cursor: progress;
+    transform: none;
+    box-shadow: none;
+  }
+  .gate-btn:focus-visible, .toggle:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
+  }
   .msg {
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--accent);
     min-height: 20px;
-    margin: 12px 0 0;
+    margin: 14px 0 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--gold);
+  }
+  @media (max-width: 430px) {
+    form { padding: 32px 24px 26px; border-radius: 16px; }
+    h1 { font-size: 25px; }
   }
 </style>
 </head>
 <body>
 <form id="gate" autocomplete="off">
-  <p class="label">PRIVATE</p>
+  <p class="eyebrow">Private access</p>
   <h1>这个页面需要密码</h1>
   <p class="hint">内容已加密保存，输入密码后在本地解密显示。密码不区分大小写。</p>
   <div class="field">
     <input id="pw" type="password" placeholder="访问密码" aria-label="访问密码" autofocus required>
     <button type="button" id="toggle" class="toggle" aria-pressed="false" aria-label="显示密码">显示</button>
   </div>
-  <button id="go" class="gate-btn" type="submit">打开</button>
+  <button id="go" class="gate-btn" type="submit">打开 <span>→</span></button>
   <p class="msg" id="msg" role="status" aria-live="polite"></p>
 </form>
 
@@ -200,6 +291,28 @@ async function unlock(password, raw) {
   return new TextDecoder().decode(plain);
 }
 
+function preloadImages(html) {
+  let srcs = [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    srcs = [...doc.querySelectorAll('img[src]')]
+      .map((img) => img.getAttribute('src'))
+      .filter((src) => src && src.indexOf('data:') !== 0);
+  } catch {
+    return Promise.resolve();
+  }
+  if (!srcs.length) return Promise.resolve();
+  const loads = srcs.map((src) => new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = probe.onerror = () => resolve();
+    probe.src = src;
+  }));
+  return Promise.race([
+    Promise.all(loads),
+    new Promise((resolve) => setTimeout(resolve, 1200)),
+  ]);
+}
+
 const form = document.getElementById('gate');
 const input = document.getElementById('pw');
 const toggle = document.getElementById('toggle');
@@ -235,16 +348,23 @@ form.addEventListener('submit', async (event) => {
     return;
   }
 
+  let html;
   try {
-    const html = await unlock(input.value, raw);
-    document.open();
-    document.write(html);
-    document.close();
+    html = await unlock(input.value, raw);
   } catch {
     msg.textContent = '密码不对，再试一次。';
     button.disabled = false;
     input.select();
+    return;
   }
+
+  // 图片先下好再切换文档，避免解密后一块块跳出来
+  msg.textContent = '正在准备…';
+  await preloadImages(html);
+
+  document.open();
+  document.write(html);
+  document.close();
 });
 </script>
 </body>
@@ -255,5 +375,5 @@ await writeFile(SHELL, shell, 'utf8');
 await writeFile(PAYLOAD_FILE, payload, 'utf8');
 
 console.log(`门禁页 index.html ${Buffer.byteLength(shell)} 字节`);
-console.log(`密文 site.enc ${payload.length} 字节`);
+console.log(`密文 site.enc ${payload.length} 字节（已内联 deck.css）`);
 console.log(`PBKDF2 ${ITERATIONS} 次迭代，密码不区分大小写`);
